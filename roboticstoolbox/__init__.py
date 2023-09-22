@@ -40,6 +40,7 @@ __all__ = [
     # tools
     "null",
     "angle_axis",
+    "angle_axis_python",
     "p_servo",
     "Ticker",
     "quintic",
@@ -94,3 +95,9 @@ __all__ = [
     "EKF",
     "ParticleFilter",
 ]
+
+try:
+    import importlib.metadata
+    __version__ = importlib.metadata.version("roboticstoolbox-python")
+except:
+    pass

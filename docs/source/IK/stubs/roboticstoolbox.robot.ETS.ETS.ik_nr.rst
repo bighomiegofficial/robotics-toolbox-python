@@ -1,8 +1,8 @@
 ﻿:orphan:
 
-ETS.ik\_nr
+ETS.ik\_NR
 ======
 
 .. currentmodule:: roboticstoolbox.robot.ETS
 
-.. automethod:: roboticstoolbox.robot.ETS.ETS.ik_nr
+.. automethod:: roboticstoolbox.robot.ETS.ETS.ik_NR

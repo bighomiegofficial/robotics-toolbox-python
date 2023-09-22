@@ -3,10 +3,10 @@
 @author Jesse Haviland
 """
 
-from typing import Tuple, Union, List, Set, Any
-from numpy import ndarray, dtype, float64
+from typing import Tuple, Union, List, Set
+from numpy import ndarray
 
-NDArray = ndarray[Any, dtype[float64]]
+NDArray = ndarray
 
 PyArrayLike = Union[List[float], Tuple[float], Set[float]]
 

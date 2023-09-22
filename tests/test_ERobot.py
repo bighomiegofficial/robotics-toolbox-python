@@ -7,12 +7,20 @@ Created on Fri May 1 14:04:04 2020
 import numpy.testing as nt
 import numpy as np
 import roboticstoolbox as rtb
-from roboticstoolbox import ERobot, ET, ETS, ERobot2, Link
-from spatialmath import SE2, SE3
+from roboticstoolbox import ERobot, ET, ETS, Link
+
+# from spatialmath import SE2, SE3
 import unittest
 import spatialmath as sm
 import spatialgeometry as gm
 from math import pi, sin, cos
+
+try:
+    from sympy import symbols
+
+    _sympy = True
+except ModuleNotFoundError:
+    _sympy = False
 
 
 class TestERobot(unittest.TestCase):
@@ -99,30 +107,30 @@ class TestERobot(unittest.TestCase):
         tau = robot.rne(z, z, z) / 9.81
         nt.assert_array_almost_equal(tau, np.r_[-2, -0.5])
 
-        tau = robot.rne([0, -pi / 2], z, z) / 9.81
+        tau = robot.rne(np.array([0.0, -pi / 2.0]), z, z) / 9.81
         nt.assert_array_almost_equal(tau, np.r_[-1.5, 0])
 
-        tau = robot.rne([-pi / 2, pi / 2], z, z) / 9.81
+        tau = robot.rne(np.array([-pi / 2, pi / 2]), z, z) / 9.81
         nt.assert_array_almost_equal(tau, np.r_[-0.5, -0.5])
 
-        tau = robot.rne([-pi / 2, 0], z, z) / 9.81
+        tau = robot.rne(np.array([-pi / 2, 0]), z, z) / 9.81
         nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
         # check velocity terms
         robot.gravity = [0, 0, 0]
-        q = [0, -pi / 2]
+        q = np.array([0, -pi / 2])
         h = -0.5 * sin(q[1])
 
-        tau = robot.rne(q, [0, 0], z)
+        tau = robot.rne(q, np.array([0, 0]), z)
         nt.assert_array_almost_equal(tau, np.r_[0, 0] * h)
 
-        tau = robot.rne(q, [1, 0], z)
+        tau = robot.rne(q, np.array([1, 0]), z)
         nt.assert_array_almost_equal(tau, np.r_[0, -1] * h)
 
-        tau = robot.rne(q, [0, 1], z)
+        tau = robot.rne(q, np.array([0, 1]), z)
         nt.assert_array_almost_equal(tau, np.r_[1, 0] * h)
 
-        tau = robot.rne(q, [1, 1], z)
+        tau = robot.rne(q, np.array([1, 1]), z)
         nt.assert_array_almost_equal(tau, np.r_[3, -1] * h)
 
         # check inertial terms
@@ -132,16 +140,16 @@ class TestERobot(unittest.TestCase):
         d21 = d12
         d22 = 0.25
 
-        tau = robot.rne(q, z, [0, 0])
+        tau = robot.rne(q, z, np.array([0, 0]))
         nt.assert_array_almost_equal(tau, np.r_[0, 0])
 
-        tau = robot.rne(q, z, [1, 0])
+        tau = robot.rne(q, z, np.array([1, 0]))
         nt.assert_array_almost_equal(tau, np.r_[d11, d21])
 
-        tau = robot.rne(q, z, [0, 1])
+        tau = robot.rne(q, z, np.array([0, 1]))
         nt.assert_array_almost_equal(tau, np.r_[d12, d22])
 
-        tau = robot.rne(q, z, [1, 1])
+        tau = robot.rne(q, z, np.array([1, 1]))
         nt.assert_array_almost_equal(tau, np.r_[d11 + d12, d21 + d22])
 
 
@@ -153,16 +161,16 @@ class TestERobot2(unittest.TestCase):
 
     def test_teach(self):
         robot = rtb.models.ETS.Planar2()
-        e = robot.teach(block=False, name=True)
+        e = robot.teach(robot.qz, block=False)
         e.close()
 
-        e = robot.teach(robot.qz, block=False, name=True)
+        e = robot.teach(robot.qz, block=False)
         e.close()
 
     def test_plot_with_vellipse(self):
         robot = rtb.models.ETS.Planar2()
         e = robot.plot(
-            robot.qz, block=False, name=True, vellipse=True, limits=[1, 2, 1, 2]
+            robot.qb, block=False, name=True, vellipse=True, limits=[1, 2, 1, 2]
         )
         e.step()
         e.close()
@@ -174,6 +182,40 @@ class TestERobot2(unittest.TestCase):
         )
         e.step()
         e.close()
+
+    def test_base(self):
+        robot = rtb.models.ETS.Planar2()
+        nt.assert_almost_equal(robot.base.A, sm.SE2().A)
+
+    def test_jacobe(self):
+        robot = rtb.models.ETS.Planar2()
+        J = robot.jacobe(robot.qz)
+
+        a1 = np.array([[0.0, 0.0], [2.0, 1.0], [1.0, 1.0]])
+
+        nt.assert_almost_equal(J, a1)
+
+    @unittest.skipUnless(_sympy, "sympy not installed")
+    def test_symdyn(self):
+
+        a1, a2, r1, r2, m1, m2, g = symbols("a1 a2 r1 r2 m1 m2 g")
+        link1 = Link(ET.Ry(flip=True), m=m1, r=[r1, 0, 0], name="link0")
+        link2 = Link(ET.tx(a1) * ET.Ry(flip=True), m=m2, r=[r2, 0, 0], name="link1")
+        robot = ERobot([link1, link2])
+
+        q = symbols("q:2")
+        qd = symbols("qd:2")
+        qdd = symbols("qdd:2")
+        Q = robot.rne(q, qd, qdd, gravity=[0, 0, g], symbolic=True)
+
+        self.assertEqual(
+            str(Q[0]),
+            "a1**2*m2*qd0**2*sin(q1)*cos(q1) + a1*qd0*(-a1*m2*qd0*cos(q1) - m2*r2*(qd0 + qd1))*sin(q1) - a1*(m2*(a1*qd0*qd1*cos(q1) - a1*qdd0*sin(q1) - g*sin(q0)*cos(q1) - g*sin(q1)*cos(q0)) + (qd0 + qd1)*(-a1*m2*qd0*cos(q1) - m2*r2*(qd0 + qd1)))*sin(q1) - a1*(-a1*m2*qd0*(-qd0 - qd1)*sin(q1) - m2*r2*(qdd0 + qdd1) + m2*(-a1*qd0*qd1*sin(q1) - a1*qdd0*cos(q1) + g*sin(q0)*sin(q1) - g*cos(q0)*cos(q1)))*cos(q1) + g*m1*r1*cos(q0) + m1*qdd0*r1**2 + m2*r2**2*(qdd0 + qdd1) - m2*r2*(-a1*qd0*qd1*sin(q1) - a1*qdd0*cos(q1) + g*sin(q0)*sin(q1) - g*cos(q0)*cos(q1))",
+        )
+        self.assertEqual(
+            str(Q[1]),
+            "a1**2*m2*qd0**2*sin(q1)*cos(q1) + a1*qd0*(-a1*m2*qd0*cos(q1) - m2*r2*(qd0 + qd1))*sin(q1) + m2*r2**2*(qdd0 + qdd1) - m2*r2*(-a1*qd0*qd1*sin(q1) - a1*qdd0*cos(q1) + g*sin(q0)*sin(q1) - g*cos(q0)*cos(q1))",
+        )
 
 
 if __name__ == "__main__":  # pragma nocover

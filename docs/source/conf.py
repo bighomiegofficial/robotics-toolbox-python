@@ -15,10 +15,10 @@ import re
 # Defined relative to configuration directory which is where this file conf.py lives
 sys.path.append(os.path.abspath("exts"))
 
-# -------- Project information ----------------------------------------------------------
+# -------- Project information -------------------------------------------------------#
 
 project = "Robotics Toolbox for Python"
-copyright = "2022, Jesse Haviland and Peter Corke"
+copyright = "2023, Jesse Haviland and Peter Corke"
 author = "Jesse Haviland and Peter Corke"
 
 # Parse version number out of setup.py
@@ -26,7 +26,7 @@ with open("../../setup.py", encoding="utf-8") as f:
     setup_py = f.read()
     m = re.search(r"version='([0-9\.]*)',", setup_py, re.MULTILINE)
 
-# -------- General configuration --------------------------------------------------------
+# -------- General configuration -----------------------------------------------------#
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
@@ -42,11 +42,13 @@ extensions = [
     "sphinx.ext.autosummary",
     "blockname",
     "sphinx.ext.intersphinx",
+    "matplotlib.sphinxext.plot_directive",
     "format_example",
     "sphinx.ext.napoleon",
     "sphinx_autodoc_typehints",
     # "scanpydoc.elegant_typehints",
     "sphinx_autorun",
+    "sphinx_favicon",
 ]
 
 autosummary_generate = True
@@ -74,7 +76,7 @@ from ansitable import ANSITable
 ANSITable._color = False
 """
 
-# -------- Options for HTML output ------------------------------------------------------
+# -------- Options for HTML output ---------------------------------------------------#
 
 html_theme = "sphinx_rtd_theme"
 
@@ -102,7 +104,7 @@ html_css_files = [
 ]
 default_role = "py:obj"
 
-# -------- Options for LaTeX/PDF output -------------------------------------------------
+# -------- Options for LaTeX/PDF output ----------------------------------------------#
 
 latex_engine = "xelatex"
 
@@ -114,7 +116,8 @@ latex_elements = {
 }
 
 # Use RVC book notation for maths
-# see https://stackoverflow.com/questions/9728292/creating-latex-math-macros-within-sphinx
+# see
+# https://stackoverflow.com/questions/9728292/creating-latex-math-macros-within-sphinx
 mathjax3_config = {
     "tex": {
         "macros": {
@@ -151,17 +154,18 @@ mathjax3_config = {
     }
 }
 
-# -------- Options InterSphinx ----------------------------------------------------------
+# -------- Options InterSphinx -------------------------------------------------------#
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("http://docs.scipy.org/doc/numpy/", None),
     "scipy": ("http://docs.scipy.org/doc/scipy/reference/", None),
     "matplotlib": ("http://matplotlib.sourceforge.net/", None),
+    "spatialmath": ("https://petercorke.github.io/spatialmath-python/", None),
 }
 
 
-# -------- Options Napoleon -------------------------------------------------------------
+# -------- Options Napoleon ----------------------------------------------------------#
 
 # Include special members (like __membername__) with docstrings in
 # the documentation
@@ -169,7 +173,44 @@ napoleon_include_special_with_doc = True
 
 napoleon_custom_sections = ["Synopsis"]
 
-# -------- Options AutoSummary ----------------------------------------------------------
+# -------- Options AutoSummary -------------------------------------------------------#
 
 # autodoc_default_flags = ["members"]
 autosummary_generate = True
+
+# -------- Options favicon -------------------------------------------------------#
+
+html_static_path = ["_static"]
+# create favicons online using https://favicon.io/favicon-converter/
+favicons = [
+    {
+        "rel": "icon",
+        "sizes": "16x16",
+        "static-file": "favicon-16x16.png",
+        "type": "image/png",
+    },
+    {
+        "rel": "icon",
+        "sizes": "32x32",
+        "static-file": "favicon-32x32.png",
+        "type": "image/png",
+    },
+    {
+        "rel": "apple-touch-icon",
+        "sizes": "180x180",
+        "static-file": "apple-touch-icon.png",
+        "type": "image/png",
+    },
+    {
+        "rel": "android-chrome",
+        "sizes": "192x192",
+        "static-file": "android-chrome-192x192.png ",
+        "type": "image/png",
+    },
+    {
+        "rel": "android-chrome",
+        "sizes": "512x512",
+        "static-file": "android-chrome-512x512.png ",
+        "type": "image/png",
+    },
+]

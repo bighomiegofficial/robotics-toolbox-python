@@ -5,16 +5,20 @@
 import numpy.testing as nt
 import numpy as np
 import roboticstoolbox as rtb
-import spatialmath as sm
 import unittest
+import os
+import spatialgeometry as sg
+from spatialmath.base import tr2jac
+
+# from spatialmath import SE3
 
 
 class TestRobot(unittest.TestCase):
     def test_fkine(self):
         panda = rtb.models.ETS.Panda()
         q1 = np.array([1.4, 0.2, 1.8, 0.7, 0.1, 3.1, 2.9])
-        q2 = [1.4, 0.2, 1.8, 0.7, 0.1, 3.1, 2.9]
-        q3 = np.expand_dims(q1, 0)
+        # q2 = [1.4, 0.2, 1.8, 0.7, 0.1, 3.1, 2.9]
+        # q3 = np.expand_dims(q1, 0)
 
         ans = np.array(
             [
@@ -578,184 +582,878 @@ class TestRobot(unittest.TestCase):
 
         nt.assert_array_almost_equal(r.jacob0(q), ans)
 
-    # def test_init(self):
-    #     l0 = rp.PrismaticDH()
-    #     l1 = rp.RevoluteDH()
+    def test_copy_init(self):
+        r = rtb.models.Panda()
 
-    #     with self.assertRaises(TypeError):
-    #         rp.DHRobot([l0, l1], keywords=1)
+        r2 = rtb.Robot(r)
 
-    #     with self.assertRaises(TypeError):
-    #         rp.Robot(l0)
+        r2.jacob0(r.q)
 
-    #     with self.assertRaises(TypeError):
-    #         rp.Robot([l0, 1])
+        self.assertEqual(r.n, r2.n)
 
-    # def test_configurations_str(self):
-    #     r = rp.models.DH.Puma560()
-    #     r.configurations_str()
+    def test_init2(self):
+        r = rtb.Robot(rtb.ETS(rtb.ET.Ry(qlim=[-1, 1])))
 
-    #     r2 = rp.models.ETS.Frankie()
-    #     r2.configurations_str()
+        self.assertEqual(r.n, 1)
 
-    # def test_dyntable(self):
-    #     r = rp.models.DH.Puma560()
-    #     r.dynamics()
+    def test_to_dict(self):
+        r = rtb.models.Panda()
 
-    # def test_linkcolormap(self):
-    #     r = rp.models.DH.Puma560()
-    #     r.linkcolormap()
+        rdict = r._to_dict(collision_alpha=0.5)
+        rdict2 = r._to_dict()
 
-    #     r.linkcolormap(["r", "r", "r", "r", "r", "r"])
+        self.assertTrue(len(rdict) > len(rdict2))
 
-    # # def test_tool_error(self):
-    # #     r = rp.models.DH.Puma560()
+        self.assertIsInstance(rdict, list)
 
-    # #     with self.assertRaises(ValueError):
-    # #         r.tool = 2
+    def test_fk_dict(self):
+        r = rtb.models.Panda()
 
-    # def test_links(self):
+        rdict = r._fk_dict(collision_alpha=0.5)
+        rdict2 = r._fk_dict()
 
-    #     l0 = rp.PrismaticDH()
-    #     l1 = rp.RevoluteDH()
-    #     l2 = rp.PrismaticDH()
-    #     l3 = rp.RevoluteDH()
+        self.assertTrue(len(rdict) > len(rdict2))
 
-    #     r0 = rp.DHRobot([l0, l1, l2, l3])
+    def test_URDF(self):
+        r = rtb.Robot.URDF("fetch_description/robots/fetch.urdf", gripper=6)
 
-    #     self.assertIs(r0[0], l0)
-    #     self.assertIs(r0[1], l1)
-    #     self.assertIs(r0[2], l2)
-    #     self.assertIs(r0[3], l3)
+        self.assertEqual(r.n, 5)
 
-    # def test_ikine_LM(self):
-    #     panda = rp.models.DH.Panda()
-    #     q = np.array([0, -0.3, 0, -2.2, 0, 2.0, np.pi / 4])
-    #     T = panda.fkine(q)
-    #     Tt = sm.SE3([T, T])
+    def test_URDF2(self):
+        r = rtb.Robot.URDF(
+            "fetch_description/robots/fetch.urdf", gripper="forearm_roll_link"
+        )
 
-    #     qr = [0.0342, 1.6482, 0.0312, 1.2658, -0.0734, 0.4836, 0.7489]
+        self.assertEqual(r.n, 7)
 
-    #     sol1 = panda.ikine_LM(T)
-    #     sol2 = panda.ikine_LM(Tt)
-    #     sol3 = panda.ikine_LM(T, q0=[0, 1.4, 0, 1, 0, 0.5, 1])
+    def test_showgraph(self):
+        r = rtb.models.Panda()
 
-    #     self.assertTrue(sol1.success)
-    #     self.assertAlmostEqual(np.linalg.norm(T - panda.fkine(sol1.q)), 0, places=4)
+        file = r.showgraph(display_graph=False)
 
-    #     self.assertTrue(sol2.success[0])
-    #     self.assertAlmostEqual(
-    #         np.linalg.norm(T - panda.fkine(sol2.q[0, :])), 0, places=4
-    #     )
-    #     self.assertTrue(sol2.success[0])
-    #     self.assertAlmostEqual(
-    #         np.linalg.norm(T - panda.fkine(sol2.q[1, :])), 0, places=4
-    #     )
+        self.assertIsNotNone(file)
 
-    #     self.assertTrue(sol3.success)
-    #     self.assertAlmostEqual(np.linalg.norm(T - panda.fkine(sol3.q)), 0, places=4)
+        self.assertTrue(file[-4:] == ".pdf")  # type: ignore
 
-    #     with self.assertRaises(ValueError):
-    #         panda.ikine_LM(T, q0=[1, 2])
+    def test_dotfile(self):
+        r = rtb.models.Panda()
 
-    # def test_ikine_LM_mask(self):
+        r.dotfile("test.dot")
+        try:
+            os.remove("test.dot")
+        except PermissionError:
+            pass
 
-    #     # simple RR manipulator, solve with mask
+    def test_dotfile2(self):
+        r = rtb.models.Frankie()
 
-    #     l0 = rp.RevoluteDH(a=2.0)
-    #     l1 = rp.RevoluteDH(a=1)
+        r.dotfile("test.dot", jtype=True, etsbox=True)
+        try:
+            os.remove("test.dot")
+        except PermissionError:
+            pass
 
-    #     r = rp.DHRobot([l0, l1])  # RR manipulator
-    #     T = sm.SE3(-1, 2, 0)
-    #     sol = r.ikine_LM(T, mask=[1, 1, 0, 0, 0, 0])
+    def test_dotfile3(self):
+        r = rtb.models.Panda()
 
-    #     self.assertTrue(sol.success)
-    #     self.assertAlmostEqual(
-    #         np.linalg.norm(T.t[:2] - r.fkine(sol.q).t[:2]), 0, places=4
-    #     )
+        r.dotfile("test.dot", ets="brief")
+        try:
+            os.remove("test.dot")
+        except PermissionError:
+            pass
 
-    #     # test initial condition search, drop iteration limit so it has to do
-    #     # some searching
-    #     sol = r.ikine_LM(T, mask=[1, 1, 0, 0, 0, 0], ilimit=8, search=True)
+    def test_dotfile4(self):
+        r = rtb.models.Panda()
 
-    #     self.assertTrue(sol.success)
-    #     self.assertAlmostEqual(
-    #         np.linalg.norm(T.t[:2] - r.fkine(sol.q).t[:2]), 0, places=4
-    #     )
+        r.dotfile("test.dot", ets="None")  # type: ignore
+        try:
+            os.remove("test.dot")
+        except PermissionError:
+            pass
 
-    # def test_ikine_LM_transpose(self):
-    #     # need to test this on a robot with squarish Jacobian, choose Puma
+    def test_fkine_all(self):
+        r = rtb.models.ETS.Panda()
 
-    #     r = rp.models.DH.Puma560()
-    #     T = r.fkine(r.qn)
+        r.fkine_all(r.q)
 
-    #     sol = r.ikine_LM(T, transpose=0.5, ilimit=1000, tol=1e-6)
+    def test_fkine_all2(self):
+        r = rtb.models.YuMi()
 
-    #     self.assertTrue(sol.success)
-    #     self.assertAlmostEqual(np.linalg.norm(T - r.fkine(sol.q)), 0, places=4)
+        r.fkine_all(r.q)
 
-    # def test_ikine_con(self):
-    #     panda = rp.models.DH.Panda()
-    #     q = np.array([0, -0.3, 0, -2.2, 0, 2.0, np.pi / 4])
-    #     T = panda.fkine(q)
-    #     Tt = sm.SE3([T, T, T])
+    def test_yoshi(self):
+        puma = rtb.models.Puma560()
+        q = puma.qn  # type: ignore
 
-    #     # qr = [7.69161412e-04, 9.01409257e-01, -1.46372859e-02,
-    #     #       -6.98000000e-02, 1.38978915e-02, 9.62104811e-01,
-    #     #       7.84926515e-01]
+        m1 = puma.manipulability(q)
+        m2 = puma.manipulability(np.c_[q, q].T)
+        m3 = puma.manipulability(q, axes="trans")
+        m4 = puma.manipulability(q, axes="rot")
 
-    #     sol1 = panda.ikine_min(T, qlim=True, q0=np.zeros(7))
-    #     sol2 = panda.ikine_min(Tt, qlim=True)
+        a0 = 0.0805
+        a2 = 0.1354
+        a3 = 2.44949
 
-    #     self.assertTrue(sol1.success)
-    #     self.assertAlmostEqual(np.linalg.norm(T - panda.fkine(sol1.q)), 0, places=4)
-    #     nt.assert_array_almost_equal(
-    #         T.A - panda.fkine(sol1.q).A, np.zeros((4, 4)), decimal=4
-    #     )
+        nt.assert_almost_equal(m1, a0, decimal=4)
+        nt.assert_almost_equal(m2[0], a0, decimal=4)  # type: ignore
+        nt.assert_almost_equal(m2[1], a0, decimal=4)  # type: ignore
+        nt.assert_almost_equal(m3, a2, decimal=4)
+        nt.assert_almost_equal(m4, a3, decimal=4)
 
-    #     self.assertTrue(sol2[0].success)
-    #     nt.assert_array_almost_equal(
-    #         T.A - panda.fkine(sol2[0].q).A, np.zeros((4, 4)), decimal=4
-    #     )
-    #     self.assertTrue(sol2[1].success)
-    #     nt.assert_array_almost_equal(
-    #         T.A - panda.fkine(sol2[1].q).A, np.zeros((4, 4)), decimal=4
-    #     )
+        with self.assertRaises(ValueError):
+            puma.manipulability(axes="abcdef")  # type: ignore
 
-    # def test_ikine_unc(self):
-    #     puma = rp.models.DH.Puma560()
-    #     q = puma.qn
-    #     T = puma.fkine(q)
-    #     Tt = sm.SE3([T, T])
+    def test_asada(self):
+        l1 = rtb.Link(ets=rtb.ETS(rtb.ET.Ry()), m=1, r=[0.5, 0, 0], name="l1")
+        l2 = rtb.Link(
+            ets=rtb.ETS(rtb.ET.tx(1)) * rtb.ET.Ry(),
+            m=1,
+            r=[0.5, 0, 0],
+            parent=l1,
+            name="l2",
+        )
+        r = rtb.Robot([l1, l2], name="simple 2 link")
+        q = np.array([1.0, 1.5])
 
-    #     sol1 = puma.ikine_min(Tt)
-    #     sol2 = puma.ikine_min(T)
-    #     sol3 = puma.ikine_min(T)
+        m1 = r.manipulability(q, method="asada")
+        m2 = r.manipulability(np.c_[q, q].T, method="asada")
+        m3 = r.manipulability(q, axes="trans", method="asada")
+        m4 = r.manipulability(q, axes="rot", method="asada")
 
-    #     self.assertTrue(sol1[0].success)
-    #     nt.assert_array_almost_equal(
-    #         T.A - puma.fkine(sol1[0].q).A, np.zeros((4, 4)), decimal=4
-    #     )
-    #     self.assertTrue(sol1[1].success)
-    #     nt.assert_array_almost_equal(
-    #         T.A - puma.fkine(sol1[1].q).A, np.zeros((4, 4)), decimal=4
-    #     )
+        a0 = 0.0
+        a2 = 0.0
+        a3 = 0.0
 
-    #     self.assertTrue(sol2.success)
-    #     nt.assert_array_almost_equal(
-    #         T.A - puma.fkine(sol2.q).A, np.zeros((4, 4)), decimal=4
-    #     )
+        nt.assert_almost_equal(m1, a0, decimal=4)
+        nt.assert_almost_equal(m2[0], a0, decimal=4)  # type: ignore
+        nt.assert_almost_equal(m2[1], a0, decimal=4)  # type: ignore
+        nt.assert_almost_equal(m3, a2, decimal=4)
+        nt.assert_almost_equal(m4, a3, decimal=4)
 
-    #     self.assertTrue(sol3.success)
-    #     nt.assert_array_almost_equal(
-    #         T.A - puma.fkine(sol3.q).A, np.zeros((4, 4)), decimal=4
-    # )
+    def test_cond(self):
+        r = rtb.models.Panda()
 
-    # def test_plot_swift(self):
-    #     r = rp.models.Panda()
+        m = r.manipulability(r.qr, method="invcondition")
 
-    #     env = r.plot(r.q, block=False)
-    #     env.close()
+        self.assertAlmostEqual(m, 0.11222, places=4)  # type: ignore
+
+    def test_minsingular(self):
+        r = rtb.models.Panda()
+
+        m = r.manipulability(r.qr, method="minsingular")
+
+        self.assertAlmostEqual(m, 0.209013, places=4)  # type: ignore
+
+    def test_jtraj(self):
+        r = rtb.models.Panda()
+
+        q1 = r.q + 0.2
+
+        q = r.jtraj(r.fkine(q1), r.fkine(r.qr), 5)
+
+        self.assertEqual(q.s.shape, (5, 7))
+
+    def test_jtraj2(self):
+        r = rtb.models.DH.Puma560()
+
+        q1 = r.q + 0.2
+
+        q = r.jtraj(r.fkine(q1), r.fkine(r.qr), 5)
+
+        self.assertEqual(q.s.shape, (5, 6))
+
+    def test_manip(self):
+        r = rtb.models.Panda()
+        q = r.qr
+
+        m1 = r.manipulability(q)
+        m2 = r.manipulability(q, axes="trans")
+        m3 = r.manipulability(q, axes="rot")
+
+        nt.assert_almost_equal(m1, 0.0837, decimal=4)
+        nt.assert_almost_equal(m2, 0.1438, decimal=4)
+        nt.assert_almost_equal(m3, 2.7455, decimal=4)
+
+        with self.assertRaises(ValueError):
+            r.manipulability(axes="abcdef")  # type: ignore
+
+    def test_jacobm(self):
+        r = rtb.models.Panda()
+        q = r.qr
+
+        m1 = r.jacobm(q)
+        m2 = r.jacobm(q, axes="trans")
+        m3 = r.jacobm(q, axes="rot")
+
+        a1 = np.array(
+            [
+                [0.00000000e00],
+                [-2.62678438e-03],
+                [1.18662211e-19],
+                [4.06398364e-02],
+                [1.21226717e-19],
+                [-2.73383661e-02],
+                [0.00000000e00],
+            ]
+        )
+
+        a2 = np.array(
+            [
+                [-4.03109907e-32],
+                [2.14997718e-02],
+                [2.57991732e-18],
+                [9.51555140e-02],
+                [1.09447194e-18],
+                [3.78529920e-02],
+                [0.00000000e00],
+            ]
+        )
+
+        a3 = np.array(
+            [
+                [-1.22157098e-31],
+                [-7.51299508e-01],
+                [9.51556025e-17],
+                [7.49956218e-01],
+                [8.40346012e-18],
+                [-5.17677915e-01],
+                [0.00000000e00],
+            ]
+        )
+
+        nt.assert_almost_equal(m1, a1, decimal=4)
+        nt.assert_almost_equal(m2, a2, decimal=4)
+        nt.assert_almost_equal(m3, a3, decimal=4)
+
+        with self.assertRaises(ValueError):
+            r.jacobm(axes="abcdef")  # type: ignore
+
+    def test_collided2(self):
+        p = rtb.models.Panda()
+        s0 = sg.Cuboid([0.01, 0.01, 0.01], pose=p.fkine(p.q))
+
+        c0 = p.collided(p.q, s0)
+
+        self.assertTrue(c0)
+
+    def test_velocity_damper(self):
+        r = rtb.models.Panda()
+
+        Ain, Bin = r.joint_velocity_damper()
+
+        a1 = np.array(
+            [
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ]
+        )
+
+        a2 = np.array([0.0, 0.0, 0.0, -2.396, 0.0, -0.65, 0.0])
+
+        nt.assert_almost_equal(Ain, a1, decimal=4)
+        nt.assert_almost_equal(Bin, a2, decimal=4)
+
+    def test_link_collision_damper(self):
+        r = rtb.models.Panda()
+
+        s = sg.Cuboid([0.01, 0.01, 0.01])
+
+        Ain, Bin = r.link_collision_damper(s, r.q)
+
+        a1 = np.array(
+            [
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -1.93649378e-34,
+                    -1.71137143e-18,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    5.05166785e-18,
+                    -8.25000000e-02,
+                    5.05166785e-18,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    8.25000000e-02,
+                    1.01033361e-17,
+                    8.25000000e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -8.25000000e-02,
+                    -1.01033361e-17,
+                    -8.25000000e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -2.75268296e-35,
+                    2.90883510e-18,
+                    -1.55445626e-34,
+                    -8.25000000e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    -8.25000000e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    -8.25000000e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -1.57039486e-11,
+                    1.11890634e-10,
+                    -1.57039486e-11,
+                    -6.09481971e-02,
+                    -1.57039486e-11,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    -4.89389206e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    -7.69198080e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    1.20407156e-14,
+                    -2.80950032e-13,
+                    1.20407156e-14,
+                    9.05269566e-14,
+                    1.20407156e-14,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -1.13663976e-10,
+                    6.90000000e-01,
+                    -1.13663996e-10,
+                    -3.74000000e-01,
+                    -1.13663972e-10,
+                    1.00000000e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    1.07768918e-17,
+                    -8.80000000e-02,
+                    1.07768918e-17,
+                    5.50000000e-03,
+                    1.07768918e-17,
+                    8.80000000e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -1.07768918e-17,
+                    8.80000000e-02,
+                    -1.07768918e-17,
+                    -5.50000000e-03,
+                    -1.07768918e-17,
+                    -8.80000000e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -1.42800820e-02,
+                    -5.22756456e-01,
+                    -1.42800820e-02,
+                    2.60933208e-01,
+                    -1.42800820e-02,
+                    -1.20480747e-01,
+                    3.09364536e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    5.96886490e-02,
+                    -3.78932484e-01,
+                    5.96886490e-02,
+                    1.87911850e-01,
+                    5.96886490e-02,
+                    -9.58635879e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    5.61245282e-02,
+                    -3.41025601e-01,
+                    5.61245282e-02,
+                    1.75113444e-01,
+                    5.61245282e-02,
+                    -1.05419509e-01,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    6.22253967e-02,
+                    -3.91030050e-01,
+                    6.22253967e-02,
+                    1.67584307e-01,
+                    6.22253967e-02,
+                    -1.03944697e-01,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -4.90028111e-02,
+                    2.75492780e-01,
+                    -4.90028111e-02,
+                    -1.50373572e-01,
+                    -4.90028111e-02,
+                    1.14302308e-01,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    4.90028111e-02,
+                    -3.83963034e-01,
+                    4.90028111e-02,
+                    1.57152963e-01,
+                    4.90028111e-02,
+                    -5.83205400e-03,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    6.22246462e-02,
+                    -3.48609107e-01,
+                    6.22246462e-02,
+                    1.25159489e-01,
+                    6.22246462e-02,
+                    -1.46371610e-01,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    -2.68888497e-02,
+                    1.03162870e-01,
+                    -2.68888497e-02,
+                    -8.10072778e-02,
+                    -2.68888497e-02,
+                    1.10725707e-01,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+                [
+                    2.68888497e-02,
+                    -2.61882491e-01,
+                    2.68888497e-02,
+                    9.09272541e-02,
+                    2.68888497e-02,
+                    4.79939142e-02,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                    0.00000000e00,
+                ],
+            ]
+        )
+        a2 = np.array(
+            [
+                2.00000000e-02,
+                -1.27216162e-01,
+                -3.34978685e-02,
+                -2.00000000e-02,
+                8.72000000e-01,
+                -2.60000000e-01,
+                -4.60000000e-01,
+                -2.20000000e-01,
+                -2.20000000e-01,
+                6.00000000e-02,
+                4.20000000e-01,
+                -1.80000000e-01,
+                -4.60000000e-01,
+                -2.20000000e-01,
+                -2.20000000e-01,
+                6.20000000e-01,
+                7.80000000e-01,
+                3.80000000e-01,
+                1.00622747e-01,
+                7.36135591e-02,
+                5.36875734e-01,
+                -2.60000000e-01,
+                -3.80000000e-01,
+                -1.40000000e-01,
+                -3.80000000e-01,
+                2.77555756e-17,
+                -1.40000000e-01,
+                -5.82574174e-02,
+                -9.75448830e-02,
+                -8.31641223e-02,
+                -2.20000000e-01,
+                -1.30350690e-01,
+                -1.30350690e-01,
+                1.00004623e-01,
+                1.41807468e-01,
+                1.41807468e-01,
+            ]
+        )
+
+        nt.assert_almost_equal(Ain, a1, decimal=4)  # type: ignore
+        nt.assert_almost_equal(Bin, a2, decimal=4)  # type: ignore
+
+    def test_hessiane(self):
+        deg = np.pi / 180
+        mm = 1e-3
+        tool_offset = (103) * mm
+
+        l0 = rtb.ET.tz(0.333) * rtb.ET.Rz(jindex=0)
+
+        l1 = rtb.ET.Rx(-90 * deg) * rtb.ET.Rz(jindex=1)
+
+        l2 = rtb.ET.Rx(90 * deg) * rtb.ET.tz(0.316) * rtb.ET.Rz(jindex=2)
+
+        l3 = rtb.ET.tx(0.0825) * rtb.ET.Rx(90 * deg) * rtb.ET.Rz(jindex=3)
+
+        l4 = (
+            rtb.ET.tx(-0.0825)
+            * rtb.ET.Rx(-90 * deg)
+            * rtb.ET.tz(0.384)
+            * rtb.ET.Rz(jindex=4)
+        )
+
+        l5 = rtb.ET.Rx(90 * deg) * rtb.ET.Rz(jindex=5)
+
+        l6 = (
+            rtb.ET.tx(0.088)
+            * rtb.ET.Rx(90 * deg)
+            * rtb.ET.tz(0.107)
+            * rtb.ET.Rz(jindex=6)
+        )
+
+        ee = rtb.ET.tz(tool_offset) * rtb.ET.Rz(-np.pi / 4)
+
+        r = rtb.Robot(l0 + l1 + l2 + l3 + l4 + l5 + l6 + ee)
+
+        q1 = np.array([1.4, 0.2, 1.8, 0.7, 0.1, 3.1, 2.9])
+        q2 = [1.4, 0.2, 1.8, 0.7, 0.1, 3.1, 2.9]
+        q3 = np.expand_dims(q1, 0)
+        q4 = np.expand_dims(q1, 1)
+
+        H0 = r.hessian0(q1)
+        He = np.empty((r.n, 6, r.n))
+        T = r.fkine(q1, include_base=False).A
+
+        for i in range(r.n):
+            He[i, :, :] = tr2jac(T.T) @ H0[i, :, :]
+
+        J = r.jacobe(q1)
+
+        nt.assert_array_almost_equal(r.hessiane(q1), He)
+        nt.assert_array_almost_equal(r.hessiane(q2), He)
+        nt.assert_array_almost_equal(r.hessiane(q3), He)
+        nt.assert_array_almost_equal(r.hessiane(q4), He)
+
+        nt.assert_array_almost_equal(r.hessiane(Je=J), He)
+        nt.assert_array_almost_equal(r.hessiane(Je=J), He)
+        nt.assert_array_almost_equal(r.hessiane(Je=J), He)
+        nt.assert_array_almost_equal(r.hessiane(Je=J), He)
+
+    def test_erobot(self):
+        ets = rtb.ETS(rtb.ET.Rz())
+        robot = rtb.ERobot(
+            ets, name="myname", manufacturer="I made it", comment="other stuff"
+        )
+        self.assertEqual(robot.name, "myname")
+        self.assertEqual(robot.manufacturer, "I made it")
+        self.assertEqual(robot.comment, "other stuff")
+
+    def test_erobot2(self):
+        ets = rtb.ETS2(rtb.ET2.R())
+        robot = rtb.ERobot2(
+            ets, name="myname", manufacturer="I made it", comment="other stuff"
+        )
+        self.assertEqual(robot.name, "myname")
+        self.assertEqual(robot.manufacturer, "I made it")
+        self.assertEqual(robot.comment, "other stuff")
+
+    def test_qlim_setters(self):
+        et = rtb.ET.Rz(qlim=[-1, 1])
+        ets = rtb.ETS([et])
+        l = rtb.Link(ets)
+        r = rtb.Robot([l])
+
+        nt.assert_almost_equal(et.qlim, np.array([-1, 1]))
+        nt.assert_almost_equal(ets.qlim, np.array([[-1, 1]]).T)
+        nt.assert_almost_equal(l.qlim, np.array([-1, 1]))
+        nt.assert_almost_equal(r.qlim, np.array([[-1, 1]]).T)
+
+        et.qlim = [-2, 2]
+        nt.assert_almost_equal(et.qlim, np.array([-2, 2]))
+        nt.assert_almost_equal(ets.qlim, np.array([[-1, 1]]).T)
+        nt.assert_almost_equal(l.qlim, np.array([-1, 1]))
+        nt.assert_almost_equal(r.qlim, np.array([[-1, 1]]).T)
+
+        ets.qlim = np.array([[-2, 2]]).T
+        nt.assert_almost_equal(et.qlim, np.array([-2, 2]))
+        nt.assert_almost_equal(ets.qlim, np.array([[-2, 2]]).T)
+        nt.assert_almost_equal(l.qlim, np.array([-2, 2]))
+        nt.assert_almost_equal(r.qlim, np.array([[-2, 2]]).T)
+
+        l.qlim = [-3, 3]
+        nt.assert_almost_equal(et.qlim, np.array([-2, 2]))
+        nt.assert_almost_equal(ets.qlim, np.array([[-3, 3]]).T)
+        nt.assert_almost_equal(l.qlim, np.array([-3, 3]))
+        nt.assert_almost_equal(r.qlim, np.array([[-3, 3]]).T)
+
+        r.qlim = np.array([[-4, 4]]).T
+        nt.assert_almost_equal(et.qlim, np.array([-2, 2]))
+        nt.assert_almost_equal(ets.qlim, np.array([[-4, 4]]).T)
+        nt.assert_almost_equal(l.qlim, np.array([-4, 4]))
+        nt.assert_almost_equal(r.qlim, np.array([[-4, 4]]).T)
 
 
 if __name__ == "__main__":  # pragma nocover

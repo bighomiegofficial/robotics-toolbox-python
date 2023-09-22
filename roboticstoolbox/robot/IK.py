@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 """
 @author Jesse Haviland
 """
@@ -53,13 +54,27 @@ class IKSolution:
     residual: float = 0.0
     reason: str = ""
 
-    def __str__(self):
+    def __iter__(self):
+        return iter(
+            (
+                self.q,
+                self.success,
+                self.iterations,
+                self.searches,
+                self.residual,
+                self.reason,
+            )
+        )
 
+    def __str__(self):
         if self.q is not None:
-            q_str = np.array2string(self.q,
-                    separator=', ',
-                    formatter={'float': lambda x: '{:.4g}'.format(0 if abs(x) < 1e-6 else x)}
-                    )  # np.round(self.q, 4)
+            q_str = np.array2string(
+                self.q,
+                separator=", ",
+                formatter={
+                    "float": lambda x: "{:.4g}".format(0 if abs(x) < 1e-6 else x)
+                },
+            )  # np.round(self.q, 4)
         else:
             q_str = None
 
@@ -72,9 +87,17 @@ class IKSolution:
         else:
             # Otherwise it is a numeric solution
             if self.success:
-                return f"IKSolution: q={q_str}, success=True, iterations={self.iterations}, searches={self.searches}, residual={self.residual:.3g}"
+                return (
+                    f"IKSolution: q={q_str}, success=True,"
+                    f" iterations={self.iterations}, searches={self.searches},"
+                    f" residual={self.residual:.3g}"
+                )
             else:
-                return f"IKSolution: q={q_str}, success=False, reason={self.reason}, iterations={self.iterations}, searches={self.searches}, residual={np.round(self.residual, 4):.3g}"
+                return (
+                    f"IKSolution: q={q_str}, success=False, reason={self.reason},"
+                    f" iterations={self.iterations}, searches={self.searches},"
+                    f" residual={np.round(self.residual, 4):.3g}"
+                )
 
 
 class IKSolver(ABC):
@@ -132,7 +155,6 @@ class IKSolver(ABC):
         joint_limits: bool = True,
         seed: Union[int, None] = None,
     ):
-
         # Solver parameters
         self.name = name
         self.slimit = slimit
@@ -145,7 +167,7 @@ class IKSolver(ABC):
         if mask is None:
             mask = np.ones(6)
 
-        self.We = np.diag(mask)
+        self.We = np.diag(mask)  # type: ignore
         self.joint_limits = joint_limits
 
     def solve(
@@ -188,21 +210,90 @@ class IKSolver(ABC):
             The reason the IK problem failed if applicable
 
         """
+        # Get the largest jindex in the ETS. If this is greater than ETS.n
+        # then we need to pad the q vector with zeros
+        max_jindex: int = 0
+
+        for j in ets.joints():
+            if j.jindex > max_jindex:  # type: ignore
+                max_jindex = j.jindex  # type: ignore
+
+        q0_method = np.zeros((self.slimit, max_jindex + 1))
 
         if q0 is None:
-            q0 = self._random_q(ets, self.slimit)
+            q0_method[:, ets.jindices] = self._random_q(ets, self.slimit)
+
         elif not isinstance(q0, np.ndarray):
             q0 = np.array(q0)
 
-        if q0.ndim == 1:
-            q0_new = self._random_q(ets, self.slimit)
+        if q0 is not None and q0.ndim == 1:
+            q0_method[:, ets.jindices] = self._random_q(ets, self.slimit)
 
-            q0_new[0] = q0
-            q0 = q0_new
+            q0_method[0, ets.jindices] = q0
+
+        if q0 is not None and q0.ndim == 2:
+            q0_method[:, ets.jindices] = self._random_q(ets, self.slimit)
+
+            q0_method[: q0.shape[0], ets.jindices] = q0
+
+        q0 = q0_method
+
+        traj = False
+
+        methTep: np.ndarray
 
         if isinstance(Tep, SE3):
-            Tep = Tep.A
+            if len(Tep) > 1:
+                traj = True
+                methTep = np.empty((len(Tep), 4, 4))
 
+                for i, T in enumerate(Tep):
+                    methTep[i] = T.A
+            else:
+                methTep = Tep.A
+        elif Tep.ndim == 3:
+            traj = True
+            methTep = Tep
+        elif Tep.shape != (4, 4):
+            raise ValueError("Tep must be a 4x4 SE3 matrix")
+        else:
+            methTep = Tep
+
+        if traj:
+            q = np.empty((methTep.shape[0], ets.n))
+            success = True
+            interations = 0
+            searches = 0
+            residual = np.inf
+            reason = ""
+
+            for i, T in enumerate(methTep):
+                sol = self._solve(ets, T, q0)
+                q[i] = sol.q
+                if not sol.success:
+                    success = False
+                    reason = sol.reason
+                interations += sol.iterations
+                searches += sol.searches
+
+                if sol.residual < residual:
+                    residual = sol.residual
+
+            return IKSolution(
+                q=q,
+                success=success,
+                iterations=interations,
+                searches=searches,
+                residual=residual,
+                reason=reason,
+            )
+
+        else:
+            sol = self._solve(ets, methTep, q0)
+
+        return sol
+
+    def _solve(self, ets: "rtb.ETS", Tep: np.ndarray, q0: np.ndarray) -> IKSolution:
         # Iteration count
         i = 0
         total_i = 0
@@ -224,7 +315,7 @@ class IKSolver(ABC):
 
                 # Attempt a step
                 try:
-                    E, q = self.step(ets, Tep, q)
+                    E, q[ets.jindices] = self.step(ets, Tep, q)
 
                 except np.linalg.LinAlgError:
                     # Abandon search and try again
@@ -233,7 +324,6 @@ class IKSolver(ABC):
 
                 # Check if we have arrived
                 if E < self.tol:
-
                     # Wrap q to be within +- 180 deg
                     # If your robot has larger than 180 deg range on a joint
                     # this line should be modified in incorporate the extra range
@@ -248,7 +338,7 @@ class IKSolver(ABC):
                         break
                     else:
                         return IKSolution(
-                            q=q,
+                            q=q[ets.jindices],
                             success=True,
                             iterations=total_i + i,
                             searches=search + 1,
@@ -401,7 +491,6 @@ class IKSolver(ABC):
 
         # Loop through the joints in the ETS
         for i in range(ets.n):
-
             # Get the corresponding joint limits
             ql0 = ets.qlim[0, i]
             ql1 = ets.qlim[1, i]
@@ -578,7 +667,7 @@ class IK_NR(IKSolver):
     .. versionchanged:: 1.0.3
         Added the Newton-Raphson IK solver class
 
-    """
+    """  # noqa
 
     def __init__(
         self,
@@ -596,7 +685,6 @@ class IK_NR(IKSolver):
         pi: Union[np.ndarray, float] = 0.3,
         **kwargs,
     ):
-
         super().__init__(
             name=name,
             ilimit=ilimit,
@@ -666,11 +754,11 @@ class IK_NR(IKSolver):
         )
 
         if self.pinv:
-            q += np.linalg.pinv(J) @ e + qnull
+            q[ets.jindices] += np.linalg.pinv(J) @ e + qnull
         else:
-            q += np.linalg.inv(J) @ e + qnull
+            q[ets.jindices] += np.linalg.inv(J) @ e + qnull
 
-        return E, q
+        return E, q[ets.jindices]
 
 
 class IK_LM(IKSolver):
@@ -766,7 +854,7 @@ class IK_LM(IKSolver):
     .. versionchanged:: 1.0.3
         Added the Levemberg-Marquadt IK solver class
 
-    """
+    """  # noqa
 
     def __init__(
         self,
@@ -823,14 +911,14 @@ class IK_LM(IKSolver):
     def step(self, ets: "rtb.ETS", Tep: np.ndarray, q: np.ndarray):
         r"""
         Performs a single iteration of the Levenberg-Marquadt optimisation
-        
+
         The operation is defined by the choice of `method` when instantiating the class.
 
         The next step is deined as
 
         .. math::
-            \vec{q}_{k+1} 
-            &= 
+            \vec{q}_{k+1}
+            &=
             \vec{q}_k +
             \left(
                 \mat{A}_k
@@ -900,7 +988,8 @@ class IK_LM(IKSolver):
         q
             The new joint coordinate vector
 
-        """
+        """  # noqa
+
         Te = ets.eval(q)
         e, E = self.error(Te, Tep)
 
@@ -922,9 +1011,9 @@ class IK_LM(IKSolver):
             ets=ets, q=q, J=J, λΣ=self.kq, λm=self.km, ps=self.ps, pi=self.pi
         )
 
-        q += np.linalg.inv(J.T @ self.We @ J + Wn) @ g + qnull
+        q[ets.jindices] += np.linalg.inv(J.T @ self.We @ J + Wn) @ g + qnull
 
-        return E, q
+        return E, q[ets.jindices]
 
 
 class IK_GN(IKSolver):
@@ -1018,7 +1107,7 @@ class IK_GN(IKSolver):
     .. versionchanged:: 1.0.3
         Added the Gauss-Newton IK solver class
 
-    """
+    """  # noqa
 
     def __init__(
         self,
@@ -1036,7 +1125,6 @@ class IK_GN(IKSolver):
         pi: Union[np.ndarray, float] = 0.3,
         **kwargs,
     ):
-
         super().__init__(
             name=name,
             ilimit=ilimit,
@@ -1110,7 +1198,7 @@ class IK_GN(IKSolver):
         q
             The new joint coordinate vector
 
-        """
+        """  # noqa
 
         Te = ets.eval(q)
         e, E = self.error(Te, Tep)
@@ -1123,11 +1211,11 @@ class IK_GN(IKSolver):
         )
 
         if self.pinv:
-            q += np.linalg.pinv(J) @ e + qnull
+            q[ets.jindices] += np.linalg.pinv(J) @ e + qnull
         else:
-            q += np.linalg.inv(J) @ e + qnull
+            q[ets.jindices] += np.linalg.inv(J) @ e + qnull
 
-        return E, q
+        return E, q[ets.jindices]
 
 
 class IK_QP(IKSolver):
@@ -1219,7 +1307,7 @@ class IK_QP(IKSolver):
     .. versionchanged:: 1.0.3
         Added the Quadratic Programming IK solver class
 
-    """
+    """  # noqa
 
     def __init__(
         self,
@@ -1238,10 +1326,10 @@ class IK_QP(IKSolver):
         pi: Union[np.ndarray, float] = 0.3,
         **kwargs,
     ):
-
         if not _qp:  # pragma: nocover
             raise ImportError(
-                "the package qpsolvers is required for this class. \nInstall using 'pip install qpsolvers'"
+                "the package qpsolvers is required for this class. \nInstall using 'pip"
+                " install qpsolvers'"
             )
 
         super().__init__(
@@ -1262,7 +1350,7 @@ class IK_QP(IKSolver):
         self.ps = ps
         self.pi = pi
 
-        self.name = f"QP)"
+        self.name = "QP)"
 
         if self.kq > 0.0:
             self.name += " Σ"
@@ -1286,16 +1374,16 @@ class IK_QP(IKSolver):
 
         .. math::
 
-            \min_x \quad f_o(\vec{x}) &= \frac{1}{2} \vec{x}^\top \mathcal{Q} \vec{x}+ \mathcal{C}^\top \vec{x}, \\ 
+            \min_x \quad f_o(\vec{x}) &= \frac{1}{2} \vec{x}^\top \mathcal{Q} \vec{x}+ \mathcal{C}^\top \vec{x}, \\
             \text{subject to} \quad \mathcal{J} \vec{x} &= \vec{\nu},  \\
             \mathcal{A} \vec{x} &\leq \mathcal{B},  \\
-            \vec{x}^- &\leq \vec{x} \leq \vec{x}^+ 
+            \vec{x}^- &\leq \vec{x} \leq \vec{x}^+
 
         with
 
         .. math::
 
-            \vec{x} &= 
+            \vec{x} &=
             \begin{pmatrix}
                 \dvec{q} \\ \vec{\delta}
             \end{pmatrix} \in \mathbb{R}^{(n+6)}  \\
@@ -1307,24 +1395,24 @@ class IK_QP(IKSolver):
             \begin{pmatrix}
                 \mat{J}(\vec{q}) & \mat{1}_{6}
             \end{pmatrix} \in \mathbb{R}^{6 \times (n+6)} \\
-            \mathcal{C} &= 
+            \mathcal{C} &=
             \begin{pmatrix}
                 \mat{J}_m \\ \bf{0}_{6 \times 1}
             \end{pmatrix} \in \mathbb{R}^{(n + 6)} \\
-            \mathcal{A} &= 
+            \mathcal{A} &=
             \begin{pmatrix}
                 \mat{1}_{n \times n + 6} \\
             \end{pmatrix} \in \mathbb{R}^{(l + n) \times (n + 6)} \\
-            \mathcal{B} &= 
+            \mathcal{B} &=
             \eta
             \begin{pmatrix}
                 \frac{\rho_0 - \rho_s}
                         {\rho_i - \rho_s} \\
                 \vdots \\
                 \frac{\rho_n - \rho_s}
-                        {\rho_i - \rho_s} 
+                        {\rho_i - \rho_s}
             \end{pmatrix} \in \mathbb{R}^{n} \\
-            \vec{x}^{-, +} &= 
+            \vec{x}^{-, +} &=
             \begin{pmatrix}
                 \dvec{q}^{-, +} \\
                 \vec{\delta}^{-, +}
@@ -1333,7 +1421,7 @@ class IK_QP(IKSolver):
         where :math:`\vec{\delta} \in \mathbb{R}^6` is the slack vector,
         :math:`\lambda_\delta \in \mathbb{R}^+` is a gain term which adjusts the
         cost of the norm of the slack vector in the optimiser,
-        :math:`\dvec{q}^{-,+}` are the minimum and maximum joint velocities, and 
+        :math:`\dvec{q}^{-,+}` are the minimum and maximum joint velocities, and
         :math:`\dvec{\delta}^{-,+}` are the minimum and maximum slack velocities.
 
         Parameters
@@ -1357,7 +1445,7 @@ class IK_QP(IKSolver):
         q
             The new joint coordinate vector
 
-        """
+        """  # noqa
 
         Te = ets.eval(q)
         e, E = self.error(Te, Tep)
@@ -1421,3 +1509,13 @@ class IK_QP(IKSolver):
         q += xd[: ets.n]
 
         return E, q
+
+
+if __name__ == "__main__":  # pragma nocover
+    sol = IKSolution(
+        np.array([1, 2, 3]), success=True, iterations=10, searches=100, residual=0.1
+    )
+
+    a, b, c, d, e = sol
+
+    print(a, b, c, d, e)
